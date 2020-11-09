@@ -1,4 +1,4 @@
 headers = c_interface.h
 headerFilter = *
 compilerOpts = -I/usr/local/include/stp
-linkerOpts = -L/usr/local/lib -lstp
+linkerOpts = -L/usr/local/lib -rpath=/usr/local/lib -lstp
