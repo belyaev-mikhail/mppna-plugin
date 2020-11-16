@@ -1,4 +1,4 @@
-import mppna.gradle.plugin.processDefFiles
+import mppna.gradle.plugin.MppnaPlugin
 
 plugins {
     kotlin("multiplatform") version "1.4.0-rc"
@@ -12,9 +12,6 @@ buildscript {
         classpath("org.jetbrains.mppna:mppna-plugin:1.0.0")
     }
 }
-
-group = "me.aleksandrina"
-version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -42,31 +39,24 @@ kotlin {
         }
     }
     jvm {
-        withJava()
         compilations.all {
             kotlinOptions.jvmTarget = "1.8"
         }
     }
 
-    processDefFiles(true)
-
     sourceSets {
-        val commonMain by getting {
-            dependencies {
-                implementation("org.jetbrains.mppna:mppna:1.0.0")
-            }
-        }
+        val commonMain by getting
         val nativeMain by getting
         val jvmMain by getting
     }
 }
 
+apply<MppnaPlugin>()
 
 val run by tasks.creating(JavaExec::class) {
     main = "MainKt"
     kotlin {
         val main = targets["jvm"].compilations["main"]
-        dependsOn("compileJava")
         dependsOn(main.compileAllTaskName)
         classpath(
             { main.output.allOutputs.files },
