@@ -108,5 +108,18 @@ class MppnaPlugin : Plugin<Project> {
         processDefFiles()
         addDependencies()
         withJava()
+
+        val groupName = "generation"
+        val outputDir = File(project.buildDir, "generatedSources/jnaerator")
+        val sourceSets = project.convention.getPlugin(JavaPluginConvention::class.java).sourceSets
+        val mainSourceSet: SourceSet = sourceSets.getByName("main")
+        mainSourceSet.java.srcDir(outputDir)
+
+        for (cinteropSettings in cinteropSettingsList) {
+            val jnaeratorTask = project.tasks.create("jnaeratorLib${cinteropSettings.library}",
+                    JNAeratorTask::class.java, outputDir, cinteropSettings.library, cinteropSettings.headers)
+            jnaeratorTask.group = groupName
+            project.tasks.getByName("compileJava").dependsOn(jnaeratorTask)
+        }
     }
 }

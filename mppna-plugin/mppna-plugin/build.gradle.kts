@@ -28,6 +28,7 @@ repositories {
 
 dependencies {
     implementation("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    api("com.nativelibs4java:jnaerator:0.12")
 }
 
 tasks.withType<KotlinCompile>() {
