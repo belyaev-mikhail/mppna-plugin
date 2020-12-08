@@ -28,7 +28,8 @@ repositories {
 
 dependencies {
     implementation("org.jetbrains.kotlin:kotlin-gradle-plugin")
-    api("com.nativelibs4java:jnaerator:0.12")
+    implementation("com.nativelibs4java:jnaerator:0.12")
+    implementation("com.github.cretz.kastree:kastree-ast-psi:0.4.0")
 }
 
 tasks.withType<KotlinCompile>() {
