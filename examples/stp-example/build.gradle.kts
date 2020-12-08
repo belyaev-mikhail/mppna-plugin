@@ -1,4 +1,4 @@
-import mppna.gradle.plugin.MppnaPlugin
+import mppna.gradle.plugin.*
 
 plugins {
     kotlin("multiplatform") version "1.4.0-rc"
@@ -12,6 +12,8 @@ buildscript {
         classpath("org.jetbrains.mppna:mppna-plugin:1.0.0")
     }
 }
+
+apply<MppnaPlugin>()
 
 repositories {
     mavenCentral()
@@ -45,13 +47,21 @@ kotlin {
     }
 
     sourceSets {
-        val commonMain by getting
+        val commonMain by getting {
+            dependencies {
+                implementation("org.jetbrains.mppna:mppna:1.0.0")
+            }
+        }
         val nativeMain by getting
         val jvmMain by getting
     }
+
+    mppna {
+        processAllDefFiles = true
+        processAllTargets = true
+    }
 }
 
-apply<MppnaPlugin>()
 
 val run by tasks.creating(JavaExec::class) {
     main = "MainKt"
