@@ -41,3 +41,4 @@ typealias FloatVar = FloatVarOf<Float>
 typealias DoubleVar = DoubleVarOf<Double>
 
 typealias COpaquePointerVar = CPointerVarOf<COpaquePointer>
+typealias CPointerVar<T> = CPointerVarOf<CPointer<T>>

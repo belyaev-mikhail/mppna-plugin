@@ -40,6 +40,7 @@ open class JNAeratorTask @Inject constructor(
         args.add(JNAeratorConfig.Runtime.JNA.name)
 
         args.add(JNAeratorCommandLineArgs.OptionDef.ForceOverwrite.clSwitch)
+        args.add(JNAeratorCommandLineArgs.OptionDef.NoStringReturns.clSwitch)
 
         JNAerator.main(args.toTypedArray())
 

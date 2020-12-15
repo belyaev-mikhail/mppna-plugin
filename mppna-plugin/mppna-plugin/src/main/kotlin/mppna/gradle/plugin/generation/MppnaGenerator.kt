@@ -2,6 +2,7 @@ package mppna.gradle.plugin.generation
 
 import kastree.ast.MutableVisitor
 import kastree.ast.Node
+import kastree.ast.Visitor
 import kastree.ast.Writer
 import kastree.ast.psi.Parser
 import org.jetbrains.kotlin.gradle.plugin.KotlinTarget
@@ -15,12 +16,13 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
     private val functions = mutableListOf<Node.Decl.Func>()
 
     // KN: class <-> C: struct
-    private val classes = mutableListOf<Node.Decl.Structured>()
+    private val enums = mutableListOf<Node.Decl.Structured>()
     private val constants = mutableListOf<Node.Decl.Property>()
 
     // KN: typealias <-> C: typedef, enum
     private val typeAliases = mutableListOf<Node.Decl.TypeAlias>()
     private val libraryTypesToKotlinTypes = mutableMapOf<Node.TypeRef.Simple, Type>()
+    private val libraryEnums = mutableListOf<String>()
 
     init {
         declarations = Parser.parseFile(klibSourceCodeFile.readText()).decls
@@ -29,19 +31,33 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
 
         for (decl in declarations) {
             when (decl) {
-                is Node.Decl.Func -> functions.add(
-                        decl.copy(
+                is Node.Decl.Func -> {
+                    var ignoreDeclaration = false
+                    Visitor.visit(decl) { v, _ ->
+                        if (v is Node.TypeRef.Simple.Piece && v.name in IGNORE_LIST)
+                            ignoreDeclaration = true
+                    }
+                    if (!ignoreDeclaration)
+                        functions.add(decl.copy(
                                 mods = filterModifiers(decl.mods, listOf(Node.Modifier.Keyword.EXTERNAL)),
-                                body = null
+                                body = null)
                         )
-                )
+                }
                 is Node.Decl.Property -> {
                     if (decl.mods.any { it is Node.Modifier.Lit && it.keyword == Node.Modifier.Keyword.CONST })
                         constants.add(decl)
                 }
-                is Node.Decl.Structured -> classes.add(
-                        decl.copy(members = emptyList())
-                )
+                is Node.Decl.Structured -> {
+                    if (decl.form == Node.Decl.Structured.Form.ENUM_CLASS) {
+                        enums.add(decl.copy(
+                                members = decl.members.filterNot { member ->
+                                    member is Node.Decl.Structured && member.form == Node.Decl.Structured.Form.CLASS
+                                },
+                                parents = listOf(Node.Decl.Structured.Parent.Type(type = Simple(MPPNA_C_ENUM_NAME), by = null)))
+                        )
+                        libraryEnums.add(decl.name)
+                    }
+                }
                 is Node.Decl.TypeAlias -> {
                     typeAliases.add(decl)
                     (decl.type.ref as? Node.TypeRef.Simple)?.let { simple ->
@@ -82,6 +98,15 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
         val commonDeclarations = mutableListOf<Node.Decl>()
         commonDeclarations.addAll(typeAliases)
         commonDeclarations.addAll(constants)
+        for (enum in enums) {
+            commonDeclarations.add(enum.copy(
+                    mods = enum.mods + Node.Modifier.Lit(Node.Modifier.Keyword.EXPECT),
+                    primaryConstructor = null,
+                    members = enum.members.mapNotNull { entry ->
+                        (entry as? Node.Decl.EnumEntry)?.copy(args = emptyList(), members = emptyList())
+                    }
+            ))
+        }
         for (function in functions) {
             commonDeclarations.add(function.copy(mods = function.mods + Node.Modifier.Lit(Node.Modifier.Keyword.EXPECT)))
         }
@@ -90,6 +115,12 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
 
     private fun generateNativeDeclarations(): List<Node.Decl> {
         val nativeDeclarations = mutableListOf<Node.Decl>()
+        for (enum in enums) {
+            nativeDeclarations.add(Node.Decl.TypeAlias(mods = listOf(Node.Modifier.Lit(Node.Modifier.Keyword.ACTUAL)),
+                    name = enum.name,
+                    typeParams = emptyList(),
+                    type = Node.Type(mods = emptyList(), ref = Simple(libraryKN, enum.name))))
+        }
         for (function in functions) {
             val functionName = function.name ?: continue
             val call = Node.Expr.Call(
@@ -126,18 +157,60 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
     }
 
     private fun Node.Decl.Func.Param.toJnaArgument(): Node.ValueArg {
-        val arg = Node.ValueArg(name = null, asterisk = false, expr = Node.Expr.Name(name))
-        val typeRef = type?.ref ?: return arg
-        val (simple, isNullable) = getSimpleFromTypeRef(typeRef) ?: return arg
-        if (getTypeFromSimple(simple)?.withJnaPointer == true) {
-            val token = if (isNullable) Node.Expr.BinaryOp.Token.DOT_SAFE else Node.Expr.BinaryOp.Token.DOT
-            return Node.ValueArg(name = null, asterisk = false, expr = Node.Expr.BinaryOp(
+        return Node.ValueArg(
+                name = null,
+                asterisk = false,
+                expr = getExpressionWithConvertCall(Node.Expr.Name(name), type?.ref, conversionTo = false)
+        )
+    }
+
+    private fun valueToEnum(expr: Node.Expr, name: String, conversionTo: Boolean): Node.Expr {
+        if (conversionTo) {
+            val call = Node.Expr.Call(
+                    expr = Node.Expr.Name("byValue"),
+                    args = listOf(Node.ValueArg(name = null, asterisk = false, expr = expr)),
+                    typeArgs = emptyList(),
+                    lambda = null
+            )
+            return Node.Expr.BinaryOp(
                     lhs = Node.Expr.Name(name),
-                    oper = Node.Expr.BinaryOp.Oper.Token(token),
-                    rhs = Node.Expr.Name(JNA_POINTER_PROPERTY_NAME)
-            ))
+                    oper = Node.Expr.BinaryOp.Oper.Token(Node.Expr.BinaryOp.Token.DOT),
+                    rhs = call
+            )
+        } else {
+            return Node.Expr.BinaryOp(
+                    lhs = expr,
+                    oper = Node.Expr.BinaryOp.Oper.Token(Node.Expr.BinaryOp.Token.DOT),
+                    rhs = Node.Expr.Name("value")
+            )
         }
-        return arg
+    }
+
+    private fun getExpressionWithConvertCall(expr: Node.Expr, ref: Node.TypeRef?, conversionTo: Boolean): Node.Expr {
+        val (simple, isNullable) = getSimpleFromTypeRef(ref)
+        if (simple != null && simple.pieces.map { it.name }.first() in libraryEnums) {
+            return valueToEnum(expr, simple.pieces.map { it.name }.first(), conversionTo)
+        }
+        val type: Type = simple?.let { getTypeFromSimple(it) } ?: return expr
+        val convert = if (type.conversion != Conversion.NONE) {
+            val conversionInfo = if (conversionTo) type.conversion.to else type.conversion.from
+            val name = Node.Expr.Name(conversionInfo.name)
+            if (conversionInfo.usingCall)
+                Node.Expr.Call(
+                        expr = name,
+                        args = emptyList(),
+                        typeArgs = emptyList(),
+                        lambda = null
+                ) else name
+        } else null
+        return if (convert != null) {
+            val token = if (isNullable) Node.Expr.BinaryOp.Token.DOT_SAFE else Node.Expr.BinaryOp.Token.DOT
+            Node.Expr.BinaryOp(
+                    lhs = expr,
+                    oper = Node.Expr.BinaryOp.Oper.Token(token),
+                    rhs = convert
+            )
+        } else expr
     }
 
     private fun generateJvmDeclarations(): List<Node.Decl> {
@@ -147,6 +220,24 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
                 oper = Node.Expr.BinaryOp.Oper.Token(Node.Expr.BinaryOp.Token.DOT),
                 rhs = Node.Expr.Name("INSTANCE")
         )
+        for (enum in enums) {
+            jvmDeclarations.add(MutableVisitor.preVisit(enum) { v, _ ->
+                when (v) {
+                    is Node.Expr.Const -> {
+                        val newValue = v.value.removeSuffix("u")
+                        if (newValue.isNotEmpty() && newValue.all { it.isDigit() }) v.copy(value = newValue)
+                        else v
+                    }
+                    is Node.TypeRef -> {
+                        val simple = getSimpleFromTypeRef(v).first
+                        if (simple != null && Type.getByValue(simple) == Type.UINT) {
+                            Type.INT.value
+                        } else v
+                    }
+                    else -> v
+                }
+            }.copy(mods = enum.mods + listOf(Node.Modifier.Lit(Node.Modifier.Keyword.ACTUAL))))
+        }
         for (function in functions) {
             val functionName = function.name ?: continue
             val call = Node.Expr.Call(
@@ -155,31 +246,16 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
                     typeArgs = emptyList(),
                     lambda = null
             )
-
-            val (simple, isNullable) = function.type?.ref?.let { ref ->
-                getSimpleFromTypeRef(ref)
-            } ?: null to false
-            val needToConvert = simple?.let { getTypeFromSimple(simple) }?.withJnaPointer == true
-            val expr = Node.Expr.BinaryOp(
-                    lhs = libraryInstance,
-                    oper = Node.Expr.BinaryOp.Oper.Token(Node.Expr.BinaryOp.Token.DOT),
-                    rhs = call
-            )
             val body = Node.Decl.Func.Body.Expr(
-                    expr = if (needToConvert) {
-                        val token = if (isNullable) Node.Expr.BinaryOp.Token.DOT_SAFE else Node.Expr.BinaryOp.Token.DOT
-                        val convertCall = Node.Expr.Call(
-                                expr = Node.Expr.Name(CONVERT_FUNCTION_NAME),
-                                args = emptyList(),
-                                typeArgs = emptyList(),
-                                lambda = null
-                        )
-                        Node.Expr.BinaryOp(
-                                lhs = expr,
-                                oper = Node.Expr.BinaryOp.Oper.Token(token),
-                                rhs = convertCall
-                        )
-                    } else expr
+                    getExpressionWithConvertCall(
+                            expr = Node.Expr.BinaryOp(
+                                    lhs = libraryInstance,
+                                    oper = Node.Expr.BinaryOp.Oper.Token(Node.Expr.BinaryOp.Token.DOT),
+                                    rhs = call
+                            ),
+                            ref = function.type?.ref,
+                            conversionTo = true
+                    )
             )
             jvmDeclarations.add(
                     function.copy(
@@ -250,10 +326,10 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
     }
 
     companion object {
+        const val MPPNA_C_ENUM_NAME = "CEnum"
         const val MPPNA_PACKAGE_NAME = "mppna"
-        const val JNA_POINTER_PROPERTY_NAME = "jnaPointer"
-        const val CONVERT_FUNCTION_NAME = "toCPointer"
         val CINTEROP_PACKAGE_NAMES = listOf("kotlinx", "cinterop")
+        val IGNORE_LIST = listOf("CFunction")
     }
 }
 
