@@ -35,8 +35,8 @@ actual class DoubleVarOf<T : Double>(override val jnaByReference: DoubleByRefere
 fun <T : CPointed> Pointer.toCPointer(): CPointer<T> = CPointer(this)
 fun Byte.toBoolean(): Boolean = this != 0.toByte()
 fun Boolean.toByte(): Byte = (if (this) 1 else 0).toByte()
-fun <T : ByReference, V : CVariable> CValuesRef<V>.getJnaByReference(): T? = (this as? CPointer)?.cVariable?.jnaByReference as? T
+fun <V : CVariable> CValuesRef<V>.getJnaByReference(): ByReference? = (this as? CPointer)?.cVariable?.jnaByReference
 
-interface CEnum {
+actual interface CEnum {
     val value: Any
 }

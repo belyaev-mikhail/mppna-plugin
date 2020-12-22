@@ -28,6 +28,8 @@ expect class ULongVarOf<T : ULong> : CPrimitiveVar
 expect class FloatVarOf<T : Float> : CPrimitiveVar
 expect class DoubleVarOf<T : Double> : CPrimitiveVar
 
+expect interface CEnum
+
 typealias BooleanVar = BooleanVarOf<Boolean>
 typealias ByteVar = ByteVarOf<Byte>
 typealias ShortVar = ShortVarOf<Short>

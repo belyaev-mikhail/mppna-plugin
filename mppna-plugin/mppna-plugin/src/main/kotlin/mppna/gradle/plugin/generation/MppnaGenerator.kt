@@ -203,14 +203,44 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
                         lambda = null
                 ) else name
         } else null
-        return if (convert != null) {
+        val convertWithCast = if (type.conversion == Conversion.JNA_BY_REFERENCE_C_POINTER && !conversionTo) {
+            castJnaByReference(convert, simple, isNullable)
+        } else convert
+        return if (convertWithCast != null) {
             val token = if (isNullable) Node.Expr.BinaryOp.Token.DOT_SAFE else Node.Expr.BinaryOp.Token.DOT
             Node.Expr.BinaryOp(
                     lhs = expr,
                     oper = Node.Expr.BinaryOp.Oper.Token(token),
-                    rhs = convert
+                    rhs = convertWithCast
             )
         } else expr
+    }
+
+    private fun castJnaByReference(expr: Node.Expr?, simple: Node.TypeRef.Simple, isNullable: Boolean): Node.Expr? {
+        val typeParam = simple.pieces.first().typeParams.firstOrNull()
+        val simpleTypeParam = getSimpleFromTypeRef(typeParam?.ref).first ?: return expr
+        val type = when (simpleTypeParam.pieces.first().name) {
+            "BooleanVar" -> "ByteByReference"
+            "ByteVar" -> "ByteByReference"
+            "ShortVar" -> "ShortByReference"
+            "IntVar" -> "IntByReference"
+            "LongVar" -> "LongByReference"
+            "UByteVar" -> "ByteByReference"
+            "UShortVar" -> "ShortByReference"
+            "UIntVar" -> "IntByReference"
+            "ULongVar" -> "NativeLongByReference"
+            "FloatVar" -> "FloatByReference"
+            "DoubleVar" -> "DoubleByReference"
+            else -> "PointerByReference"
+        }
+        val token = if (isNullable) Node.Expr.TypeOp.Token.AS_SAFE else Node.Expr.TypeOp.Token.AS
+        return expr?.let {
+            Node.Expr.TypeOp(
+                    lhs = expr,
+                    oper = Node.Expr.TypeOp.Oper(token),
+                    rhs = Node.Type(mods = emptyList(), ref = Simple(type))
+            )
+        }
     }
 
     private fun generateJvmDeclarations(): List<Node.Decl> {
@@ -268,10 +298,11 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
     }
 
     fun generateDeclarations(targetsToSrcDirs: Map<KotlinTarget?, File>) {
+        val jvmImports = listOf(Node.Import(JNA_PTR_PACKAGE_NAMES, wildcard = true, alias = null))
         val nodeFiles = listOf(
                 NodeFile(generateCommonDeclarations()) to targetsToSrcDirs.filterKeys { it == null }.values,
                 NodeFile(generateNativeDeclarations()) to targetsToSrcDirs.filterKeys { it is KotlinNativeTargetWithHostTests }.values,
-                NodeFile(generateJvmDeclarations()) to targetsToSrcDirs.filterKeys { it is KotlinJvmTarget }.values
+                NodeFile(generateJvmDeclarations(), imports = jvmImports) to targetsToSrcDirs.filterKeys { it is KotlinJvmTarget }.values
         )
         for ((nodeFile, dirs) in nodeFiles) {
             for (dir in dirs) {
@@ -285,11 +316,11 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
     }
 
     @Suppress("FunctionName")
-    private fun NodeFile(decls: List<Node.Decl>): Node.File = Node.File(
+    private fun NodeFile(decls: List<Node.Decl>, imports: List<Node.Import> = emptyList()): Node.File = Node.File(
             pkg = Node.Package(mods = emptyList(), names = listOf(packageName)),
             decls = decls,
             anns = emptyList(),
-            imports = listOf(Node.Import(listOf("mppna"), wildcard = true, alias = null))
+            imports = imports + listOf(Node.Import(listOf(MPPNA_PACKAGE_NAME), wildcard = true, alias = null))
     )
 
     private fun replacePackages(decl: Node.Decl): Node.Decl = MutableVisitor.preVisit(decl) { v, _ ->
@@ -329,6 +360,7 @@ class MppnaGenerator(val libraryC: String, val libraryKN: String, klibSourceCode
         const val MPPNA_C_ENUM_NAME = "CEnum"
         const val MPPNA_PACKAGE_NAME = "mppna"
         val CINTEROP_PACKAGE_NAMES = listOf("kotlinx", "cinterop")
+        val JNA_PTR_PACKAGE_NAMES = listOf("com", "sun", "jna", "ptr")
         val IGNORE_LIST = listOf("CFunction")
     }
 }

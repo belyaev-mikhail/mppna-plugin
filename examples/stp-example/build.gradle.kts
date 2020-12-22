@@ -67,7 +67,7 @@ val run by tasks.creating(JavaExec::class) {
     main = "MainKt"
     kotlin {
         val main = targets["jvm"].compilations["main"]
-        dependsOn(main.compileAllTaskName)
+        dependsOn("compileJava", main.compileAllTaskName)
         classpath(
             { main.output.allOutputs.files },
             { configurations["jvmRuntimeClasspath"] }
