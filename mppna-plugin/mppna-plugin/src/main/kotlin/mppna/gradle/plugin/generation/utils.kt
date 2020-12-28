@@ -1,10 +1,29 @@
 package mppna.gradle.plugin.generation
 
 import kastree.ast.Node
+import kastree.ast.Visitor
+import kastree.ast.psi.Parser
 
 @Suppress("FunctionName")
 fun Simple(vararg names: String): Node.TypeRef.Simple {
     return Node.TypeRef.Simple(names.map { name -> (Node.TypeRef.Simple.Piece(name, emptyList())) })
+}
+
+@Suppress("FunctionName")
+fun Simple(names: List<String>, typeParams: List<Node.TypeRef.Simple> = emptyList()): Node.TypeRef.Simple {
+    val pieces = mutableListOf<Node.TypeRef.Simple.Piece>()
+    for ((i, name) in names.withIndex()) {
+        if (i != names.size - 1) {
+            pieces.add(Node.TypeRef.Simple.Piece(name, emptyList()))
+        } else {
+            pieces.add(
+                Node.TypeRef.Simple.Piece(
+                    name,
+                    typeParams.map { ref -> Node.Type(mods = emptyList(), ref = ref) })
+            )
+        }
+    }
+    return Node.TypeRef.Simple(pieces)
 }
 
 fun getSimpleFromTypeRef(typeRef: Node.TypeRef?): Pair<Node.TypeRef.Simple?, Boolean> {
@@ -21,7 +40,7 @@ data class ConversionInfo(val name: String = "", val usingCall: Boolean = true)
 
 enum class Conversion(val to: ConversionInfo = ConversionInfo(), val from: ConversionInfo = ConversionInfo()) {
     NONE,
-    JNA_POINTER_C_OPAQUE_POINTER(ConversionInfo("toCPointer"), ConversionInfo("jnaPointer", false)),
+    JNA_POINTER_C_POINTER(ConversionInfo("toCPointer"), ConversionInfo("jnaPointer", false)),
     JNA_BY_REFERENCE_C_POINTER(ConversionInfo("toCPointer"), ConversionInfo("getJnaByReference")),
     BYTE_BOOLEAN(ConversionInfo("toBoolean"), ConversionInfo("toByte")),
     BYTE_UBYTE(ConversionInfo("toUByte"), ConversionInfo("toByte")),
@@ -45,16 +64,22 @@ enum class Type(val value: Node.TypeRef.Simple, val conversion: Conversion = Con
     ULONG(Simple("ULong"), Conversion.LONG_ULONG),
     STRING(Simple("String")),
 
-    C_OPAQUE_POINTER(Simple("COpaquePointer"), Conversion.JNA_POINTER_C_OPAQUE_POINTER),
+    C_OPAQUE_POINTER(Simple("COpaquePointer"), Conversion.JNA_POINTER_C_POINTER),
     C_VALUES_REF(Simple("CValuesRef"), Conversion.JNA_BY_REFERENCE_C_POINTER),
     C_POINTER(Simple("CPointer"), Conversion.JNA_BY_REFERENCE_C_POINTER),
-    C_ARRAY_POINTER(Simple("CArrayPointer"), Conversion.JNA_BY_REFERENCE_C_POINTER);
+    C_ARRAY_POINTER(Simple("CArrayPointer"), Conversion.JNA_BY_REFERENCE_C_POINTER),
+
+    C_VALUES_REF_BYTE_VAR(Simple(listOf("CValuesRef"), listOf(Simple("ByteVar"))), Conversion.JNA_POINTER_C_POINTER);
 
     companion object {
         fun getByValue(value: Node.TypeRef.Simple) = values().firstOrNull { type ->
-            type.value.pieces.map { it.name } == value.pieces.map { it.name }
+            type.value == value
         }
+            ?: values().firstOrNull { type ->
+                type.value.pieces.map { it.name } == value.pieces.map { it.name }
+            }
     }
 }
+
 
 fun jnaInterface(library: String) = "${library}Library"
