@@ -29,6 +29,7 @@ open class MppnaPluginExtension(private val project: Project) {
     var processAllTargets = false
     val targets = mutableSetOf<KotlinTarget>()
     val defFiles = mutableSetOf<File>()
+    var compilation = "main"
     internal val cinterops = mutableListOf<MutableList<DefaultCInteropSettings>>()
 
     internal fun withJava() {
@@ -64,9 +65,10 @@ open class MppnaPluginExtension(private val project: Project) {
             cinterops.add(mutableListOf())
             targets.filterIsInstance<KotlinNativeTargetWithHostTests>().forEach { target ->
                 target.apply {
-                    compilations.getByName("main").cinterops {
+                    compilations.getByName(compilation).cinterops {
                         val lib = create(defFile.name.removeSuffix(".def"))
                         lib.extraOpts.addAll(listOf("-mode", "sourcecode"))
+                        lib.defFile = defFile
                         cinterops.last().add(lib)
                     }
                 }
@@ -109,14 +111,14 @@ fun Project.mppna(configure: MppnaPluginExtension.() -> Unit) {
 
     val groupName = "generation"
     val sourceSets = project.convention.getPlugin(JavaPluginConvention::class.java).sourceSets
-    val mainSourceSet: SourceSet = sourceSets.getByName("main")
-    mainSourceSet.java.srcDir(File(project.buildDir, MppnaPluginExtension.JNAERATOR_DIR))
+    val compilationSourceSet: SourceSet = sourceSets.getByName(extension.compilation)
+    compilationSourceSet.java.srcDir(File(project.buildDir, MppnaPluginExtension.JNAERATOR_DIR))
 
     val targetsToSrcDirs = mutableMapOf<KotlinTarget?, File>()
     for (target in extension.targets + null) {
         val name = target?.name ?: "common"
         val srcDir = project.buildDir.resolve("${MppnaPluginExtension.MPPNA_DECLARATIONS_DIR}/$name")
-        mppExtension.sourceSets.getByName("${name}Main").kotlin.srcDir(srcDir)
+        mppExtension.sourceSets.getByName("${name}${extension.compilation.capitalize()}").kotlin.srcDir(srcDir)
         targetsToSrcDirs[target] = srcDir
     }
 
@@ -130,8 +132,8 @@ fun Project.mppna(configure: MppnaPluginExtension.() -> Unit) {
         val nativeTarget = extension.targets.firstIsInstance<KotlinNativeTargetWithHostTests>()
 
         val klibSourceCodeFile = project.buildDir.resolve(
-                "classes/kotlin/${nativeTarget.name}/main/" +
-                        "${project.name}-cinterop-${cinteropSettings.libraryKN}.klib-build/" +
+                "classes/kotlin/${nativeTarget.name}/${extension.compilation}/" +
+                        "${if (extension.compilation == "test") "test" else project.name}-cinterop-${cinteropSettings.libraryKN}.klib-build/" +
                         "kotlin/${cinteropSettings.libraryKN}/${cinteropSettings.libraryKN}.kt")
         val outputDirsMppna = targetsToSrcDirs.values.map { it.resolve(mppnaPackage) }.toList()
 

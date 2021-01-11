@@ -7,6 +7,7 @@ import kotlin.jvm.JvmName
 
 expect abstract class CPointed
 expect abstract class CValuesRef<T : CPointed>
+expect abstract class CValues<T : CVariable> : CValuesRef<T>
 expect abstract class CVariable : CPointed
 expect class CPointerVarOf<T : CPointer<*>> : CVariable
 expect class CPointer<T : CPointed> : CValuesRef<T>
@@ -44,3 +45,6 @@ typealias DoubleVar = DoubleVarOf<Double>
 
 typealias COpaquePointerVar = CPointerVarOf<COpaquePointer>
 typealias CPointerVar<T> = CPointerVarOf<CPointer<T>>
+
+expect fun CPointer<ByteVar>.toKString(): String
+expect val String.cstr: CValues<ByteVar>

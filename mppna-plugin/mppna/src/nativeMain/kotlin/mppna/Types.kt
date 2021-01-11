@@ -1,7 +1,11 @@
 package mppna
 
+import kotlinx.cinterop.toKString
+import kotlinx.cinterop.cstr
+
 actual typealias CPointed = kotlinx.cinterop.CPointed
 actual typealias CValuesRef<T> = kotlinx.cinterop.CValuesRef<T>
+actual typealias CValues<T> = kotlinx.cinterop.CValues<T>
 actual typealias CVariable = kotlinx.cinterop.CVariable
 actual typealias CPointerVarOf<T> = kotlinx.cinterop.CPointerVarOf<T>
 actual typealias CPointer<T> = kotlinx.cinterop.CPointer<T>
@@ -21,3 +25,7 @@ actual typealias FloatVarOf<T> = kotlinx.cinterop.FloatVarOf<T>
 actual typealias DoubleVarOf<T> = kotlinx.cinterop.DoubleVarOf<T>
 
 actual typealias CEnum = kotlinx.cinterop.CEnum
+
+actual fun CPointer<ByteVar>.toKString(): String = this.toKString()
+actual val String.cstr: CValues<ByteVar>
+    get() = this.cstr
